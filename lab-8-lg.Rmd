@@ -56,3 +56,86 @@ leaflet(oil_sf) %>%
 
 ```
 
+###tmap plot with the Texas state shapefile
+```{r}
+states<-st_read(dsn=".", layer="states")
+
+tex_border<-states %>% 
+  filter(STATE_NAME=="Texas") %>% 
+  st_transform(4326)
+#Transform so that it has the same crs as the point data  
+
+st_crs(tex_border)
+
+plot(tex_border) #5 non-geometry attributes. 
+
+tm_shape(tex_border)+
+  tm_polygons()+
+  tm_shape(oil_sf)+
+  tm_dots(size=0.3)
+```
+
+###Convert the data to spatial points patterns (combination of point data and the bounding window) so that you can do quadrat test, nearest neighbours
+```{r}
+spill_spatial<-as(oil_sf, "Spatial") #Turn this back into spatial points data frame
+spill_ppp<-as(spill_spatial, "ppp") #Turn into ppp (point pattern data)
+
+tx_spatial<-as(tex_border, "Spatial")
+tx_owin<-as(tx_spatial, "owin") #Turn into outer window
+
+all_ppp<-ppp(spill_ppp$x, spill_ppp$y, window=tx_owin) #x and y are the columns with lat and long
+
+
+```
+
+###Make a density plot
+```{r}
+plot(density(all_ppp, sigma=0.4)) #sigma sets radius of bubbles. Can totally change someone's interpretation. Be careful. 
+```
+
+###Quadrat test for spatial evenness (see lecture slides for why this is not a good test of complete spatial randomness)
+```{r}
+oil_qt<-quadrat.test(all_ppp, nx=5, ny=5) #5 horizontal regions, 5 vertical
+oil_qt
+#Based on this test, we would reject null hyp of CSR/evenly distributed (this test is really testing for evenness, not CSR - see lecture)
+
+plot(all_ppp)
+plot(oil_qt, add=TRUE, cex=0.4) #Run these lines at the same time
+#It's cool that it changes the expected proportion for partial quadrants.
+
+```
+
+
+###Nearest neighbour analysis with G-function (only considers one nearest neighbour)
+
+Recall: If data are more clustered than CSR, nearest neighbours are closer together on average. If data are more uniform than CSR, nearest neighbours are farther apart on average. 
+
+```{r}
+#Allison has already determined an appropriate range for r distances. Would be different for other data. 
+r<-seq(0,1, by=0.01)
+
+oil_gfun<-envelope(all_ppp, fun=Gest, r=r, nsim=100) #nsim=100 runs 100 simulations with a Poisson distribution (the distribution of CSR data)
+
+attributes(oil_gfun)
+
+ggplot(oil_gfun, aes(x=r, y=obs))+
+  geom_line(color="black")+
+  geom_line(aes(x=r, y=theo), color="red")
+
+#Observed data has higher proportion of point pairs with nearest neighbours at shorter distances to each other than CSR.
+
+```
+
+###Nearest neighbour using the L-function (A.K.A. Ripley's K, standardized)
+
+```{r}
+r2<-seq(0,3,by=0.5) #L function is more computationally intensive, so we chose large increment so the simulations won't take too long to run in lab
+
+oil_lfun<-envelope(all_ppp, fun=Lest, r=r2, nsim=20) #Again, we chose low number of simulations for the sake of saving time in lab. On your own you'd want to do more.
+
+ggplot(oil_lfun, aes(x=r2, y=obs))+
+  geom_line(color="black")+
+  geom_line(aes(x=r2, y=theo), color="blue") #Looks bad because our increments are too big. 
+```
+
+
